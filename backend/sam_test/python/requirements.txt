@@ -1,0 +1,7 @@
+openai>=1.0
+meta_sam_parser
+fastapi
+uvicorn[standard]
+python-multipart
+pillow
+pydantic

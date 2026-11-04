@@ -107,6 +107,7 @@ async def reason_about_scene(
     for path in image_paths:
         content.append({"type": "image_url", "image_url": {"url": image_data_url(path)}})
 
+    print(f"[Meta Model API] -> model={SPARK_MODEL} reasoning over {len(image_paths)} photo(s)", flush=True)
     async with client() as api:
         completion = await api.beta.chat.completions.parse(
             model=SPARK_MODEL,
@@ -116,5 +117,9 @@ async def reason_about_scene(
             ],
             response_format=AccessibilityAssessment,
         )
+    print(
+        f"[Meta Model API] <- model={completion.model} verdict={completion.choices[0].message.parsed.overall_verdict}",
+        flush=True,
+    )
 
     return completion.choices[0].message.parsed

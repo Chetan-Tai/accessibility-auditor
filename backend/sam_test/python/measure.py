@@ -73,6 +73,7 @@ async def scan_door_from_photos(image_paths: list[Path]) -> dict[str, Any]:
     Uses whichever photo has the most face-on (least distorted) reference
     paper for the actual calibration, rather than averaging indiscriminately."""
     candidates = []
+    per_photo_deviation: list[dict[str, Any]] = []
 
     for path in image_paths:
         door_result, paper_result = await asyncio.gather(
@@ -84,10 +85,18 @@ async def scan_door_from_photos(image_paths: list[Path]) -> dict[str, Any]:
         paper_masks = [r for r in paper_result.records if r.kind == "mask"]
 
         if not door_boxes or not paper_boxes or not paper_masks:
+            per_photo_deviation.append({"path": str(path), "deviation": None, "valid": False})
             continue
 
         deviation = paper_ratio_deviation(paper_boxes[0])
-        if deviation is None or deviation > RATIO_TOLERANCE:
+        if deviation is None:
+            per_photo_deviation.append({"path": str(path), "deviation": None, "valid": False})
+            continue
+
+        is_acceptable = deviation <= RATIO_TOLERANCE
+        per_photo_deviation.append({"path": str(path), "deviation": round(deviation, 4), "valid": is_acceptable})
+
+        if not is_acceptable:
             continue
 
         paper_px_area = sum(decode_mask_to_raster(paper_masks[0].mask))
@@ -115,6 +124,8 @@ async def scan_door_from_photos(image_paths: list[Path]) -> dict[str, Any]:
             "status": "NO_VALID_PHOTO",
             "reason": "No photo had both a detected door and a usable, face-on calibration reference",
             "photos_considered": len(image_paths),
+            "photo_angle_deviations": per_photo_deviation,
+            "ratio_tolerance": RATIO_TOLERANCE,
         }
 
     candidates.sort(key=lambda c: c["deviation"])
@@ -139,4 +150,6 @@ async def scan_door_from_photos(image_paths: list[Path]) -> dict[str, Any]:
         "best_photo_angle_deviation": round(best["deviation"], 4),
         "best_photo_door_box": box_to_relative(best["door_box"], best["img_w"], best["img_h"]),
         "best_photo_paper_box": box_to_relative(best["paper_box"], best["img_w"], best["img_h"]),
+        "photo_angle_deviations": per_photo_deviation,
+        "ratio_tolerance": RATIO_TOLERANCE,
     }

@@ -116,6 +116,7 @@ async def parse_image_events(
 
 async def segment_image(path: Path, concept: str) -> ImageSegmentationResult:
     # Stream the response and let the parser decode the segmentation grammar.
+    print(f"[Meta Model API] -> model={MODEL} concept={concept!r} file={path.name}", flush=True)
     async with client() as api:
         stream = await api.responses.create(
             model=MODEL,
@@ -128,7 +129,13 @@ async def segment_image(path: Path, concept: str) -> ImageSegmentationResult:
         # suspended over the response body. Close it here, before the response,
         # or the loop's asyncgen finalizer aclose()s a generator that is running.
         async with stream, aclosing(stream_events(stream)) as events:
-            return await parse_image_events(events)
+            result = await parse_image_events(events)
+    boxes = sum(1 for r in result.records if r.kind == "box")
+    print(
+        f"[Meta Model API] <- model={MODEL} concept={concept!r} outcome={result.outcome.status} boxes={boxes}",
+        flush=True,
+    )
+    return result
 
 
 async def upload_video(path: Path) -> str:

@@ -1,25 +1,26 @@
-// backend/sam_test/python/static/script.js (also mirrored in frontend/script.js)
 const photoInput = document.getElementById("photo-input");
 const previewStrip = document.getElementById("preview-strip");
 const runBtn = document.getElementById("run-btn");
-const uploadText = document.getElementById("upload-text");
 
 const statusSection = document.getElementById("status-section");
 const resultsSection = document.getElementById("results-section");
 const errorSection = document.getElementById("error-section");
 const errorText = document.getElementById("error-text");
 
-const verdictBanner = document.getElementById("verdict-banner");
-const measurementCard = document.getElementById("measurement-card");
+const verdictHeading = document.getElementById("verdict-heading");
+const verdictSummary = document.getElementById("verdict-summary");
+const measurementStrip = document.getElementById("measurement-strip");
+const galleryNote = document.getElementById("photo-gallery-note");
 const photoGallery = document.getElementById("photo-gallery");
 const flagsList = document.getElementById("flags-list");
-const remediationCard = document.getElementById("remediation-card");
+const remediationBlock = document.getElementById("remediation-block");
 
 const stageEls = {
   segmenting: document.querySelector('.stage[data-stage="segmenting"]'),
   calibrating: document.querySelector('.stage[data-stage="calibrating"]'),
   reasoning: document.querySelector('.stage[data-stage="reasoning"]'),
 };
+const STAGE_NUMBERS = { segmenting: "01", calibrating: "02", reasoning: "03" };
 
 let selectedFiles = [];
 
@@ -27,9 +28,6 @@ photoInput.addEventListener("change", () => {
   selectedFiles = Array.from(photoInput.files);
   renderPreviews();
   runBtn.disabled = selectedFiles.length === 0;
-  uploadText.textContent = selectedFiles.length
-    ? `${selectedFiles.length} photo(s) selected`
-    : "Click to choose photos";
 });
 
 function renderPreviews() {
@@ -37,6 +35,8 @@ function renderPreviews() {
   selectedFiles.forEach((file) => {
     const img = document.createElement("img");
     img.src = URL.createObjectURL(file);
+    img.className = "h-16 w-16 object-cover ring-1 ring-zinc-800";
+    img.alt = "";
     previewStrip.appendChild(img);
   });
 }
@@ -44,20 +44,24 @@ function renderPreviews() {
 runBtn.addEventListener("click", runAudit);
 
 function resetStages() {
-  Object.values(stageEls).forEach((el) => el.classList.remove("active", "done", "skipped"));
+  Object.entries(stageEls).forEach(([key, el]) => {
+    el.className = "stage flex items-baseline gap-4 border-l border-zinc-800 pl-4 text-zinc-600 transition-colors";
+    el.querySelector(".stage-index").textContent = STAGE_NUMBERS[key];
+  });
 }
 
 function applyStageEvent(evt) {
   const el = stageEls[evt.stage];
   if (!el) return;
+  const indexEl = el.querySelector(".stage-index");
   if (evt.status === "start") {
-    el.classList.add("active");
+    el.className = "stage flex items-baseline gap-4 border-l border-accent pl-4 text-zinc-50 transition-colors";
   } else if (evt.status === "done") {
-    el.classList.remove("active");
-    el.classList.add("done");
+    el.className = "stage flex items-baseline gap-4 border-l border-zinc-700 pl-4 text-zinc-400 transition-colors";
+    indexEl.textContent = "✓";
   } else if (evt.status === "skipped") {
-    el.classList.remove("active");
-    el.classList.add("skipped");
+    el.className = "stage flex items-baseline gap-4 border-l border-zinc-800 pl-4 text-zinc-600 italic transition-colors";
+    indexEl.textContent = "—";
   }
 }
 
@@ -109,7 +113,6 @@ async function runAudit() {
     errorText.textContent = `Something went wrong: ${err.message}`;
     show(errorSection);
   } finally {
-    hide(statusSection);
     runBtn.disabled = false;
   }
 }
@@ -126,60 +129,103 @@ const CONCEPT_CLASS = {
   threshold: "threshold",
 };
 
+const VERDICT_COLOR = {
+  ACCESSIBLE: "text-status-good",
+  NOT_ACCESSIBLE: "text-status-bad",
+  NEEDS_VERIFICATION: "text-status-warn",
+};
+
+const CONCERN_COLOR = {
+  HIGH: "text-status-bad",
+  LOW: "text-status-warn",
+  NONE: "text-status-good",
+};
+
 function renderResults(data) {
   const { result, images } = data;
   const { survey, door_measurement, assessment } = result;
 
   renderVerdict(assessment);
   renderMeasurement(door_measurement);
+  renderGalleryNote(door_measurement);
   renderGallery(result.photos, images, survey, door_measurement);
   renderFlags(assessment.flags);
   renderRemediation(assessment.remediation);
 
   show(resultsSection);
-}
-
-function renderVerdict(assessment) {
-  verdictBanner.className = `verdict-${assessment.overall_verdict}`;
-  verdictBanner.innerHTML = `
-    ${formatVerdict(assessment.overall_verdict)}
-    <span class="verdict-summary">${escapeHtml(assessment.summary)}</span>
-  `;
+  verdictHeading.focus();
 }
 
 function formatVerdict(v) {
   return { ACCESSIBLE: "Accessible", NOT_ACCESSIBLE: "Not accessible", NEEDS_VERIFICATION: "Needs verification" }[v] || v;
 }
 
+function renderVerdict(assessment) {
+  verdictHeading.className = `font-display text-4xl font-semibold leading-tight outline-none sm:text-5xl ${VERDICT_COLOR[assessment.overall_verdict] || "text-zinc-50"}`;
+  verdictHeading.textContent = formatVerdict(assessment.overall_verdict);
+  verdictSummary.textContent = assessment.summary;
+}
+
+function stat(label, value) {
+  const wrap = document.createElement("div");
+  wrap.innerHTML = `
+    <div class="font-mono text-[10px] uppercase tracking-[0.15em] text-zinc-500">${label}</div>
+    <div class="mt-1 font-mono text-2xl text-zinc-50">${value}</div>
+  `;
+  return wrap;
+}
+
 function renderMeasurement(m) {
+  measurementStrip.innerHTML = "";
   if (!m || m.status !== "MEASURED") {
-    measurementCard.innerHTML = `
-      <h3>Door width measurement</h3>
-      <p>${m && m.reason ? escapeHtml(m.reason) : "No measurement available."}</p>
+    const wrap = document.createElement("div");
+    wrap.innerHTML = `
+      <div class="font-mono text-[10px] uppercase tracking-[0.15em] text-zinc-500">Door width</div>
+      <div class="mt-1 max-w-sm text-sm text-zinc-400">${escapeHtml((m && m.reason) || "No measurement available.")}</div>
     `;
+    measurementStrip.appendChild(wrap);
     return;
   }
   const [low, high] = m.estimated_width_range_in;
-  measurementCard.innerHTML = `
-    <h3>Door width measurement</h3>
-    <div class="measure-row"><span>Estimated clear width</span><span>${m.estimated_width_in} in (${low}&ndash;${high} in)</span></div>
-    <div class="measure-row"><span>ADA minimum</span><span>${m.ada_minimum_in} in</span></div>
-    <div class="measure-row"><span>Verdict</span><span class="pill pill-${m.verdict}">${m.verdict}</span></div>
-    <div class="measure-row"><span>Photos considered / valid</span><span>${m.photos_considered} / ${m.valid_candidates}</span></div>
-    <div class="measure-row"><span>Best-angle photo deviation</span><span>${m.best_photo_angle_deviation}</span></div>
+  measurementStrip.appendChild(stat("Door estimated width", `${m.estimated_width_in} in`));
+  measurementStrip.appendChild(stat("Range (&plusmn;margin of error)", `${low}&ndash;${high} in`));
+  measurementStrip.appendChild(stat("ADA minimum", `${m.ada_minimum_in} in`));
+
+  const verdictColorClass = { PASS: "text-status-good", BORDERLINE: "text-status-warn", BLOCKING: "text-status-bad" }[m.verdict] || "text-zinc-50";
+  const verdictStat = document.createElement("div");
+  verdictStat.innerHTML = `
+    <div class="font-mono text-[10px] uppercase tracking-[0.15em] text-zinc-500">Verdict</div>
+    <div class="mt-1 font-mono text-2xl ${verdictColorClass}">${m.verdict}</div>
   `;
+  measurementStrip.appendChild(verdictStat);
+}
+
+function renderGalleryNote(doorMeasurement) {
+  if (!doorMeasurement || doorMeasurement.ratio_tolerance === undefined) {
+    galleryNote.textContent = "";
+    return;
+  }
+  galleryNote.textContent =
+    `Angle deviation measures how close each photo's calibration paper is to its true 8.5×11 shape — ` +
+    `lower is more reliable. Tolerance: ≤${doorMeasurement.ratio_tolerance}. The lowest-deviation photo is used for measurement.`;
 }
 
 function renderGallery(photoPaths, images, survey, doorMeasurement) {
   photoGallery.innerHTML = "";
 
+  const deviationByPath = {};
+  ((doorMeasurement && doorMeasurement.photo_angle_deviations) || []).forEach((d) => {
+    deviationByPath[d.path] = d;
+  });
+
   photoPaths.forEach((path, idx) => {
     const frame = document.createElement("div");
-    frame.className = "photo-frame";
-    frame.style.animationDelay = `${idx * 70}ms`;
+    frame.className = "relative";
 
     const img = document.createElement("img");
     img.src = images[path];
+    img.alt = `Photo ${idx + 1} of the entrance`;
+    img.className = "block h-auto w-full ring-1 ring-zinc-800";
     frame.appendChild(img);
 
     const boxSpecs = [];
@@ -193,14 +239,10 @@ function renderGallery(photoPaths, images, survey, doorMeasurement) {
       });
     });
 
-    if (
-      doorMeasurement &&
-      doorMeasurement.status === "MEASURED" &&
-      doorMeasurement.best_photo === path &&
-      doorMeasurement.best_photo_door_box &&
-      doorMeasurement.best_photo_paper_box
-    ) {
-      boxSpecs.push({ box: doorMeasurement.best_photo_door_box, label: "door (measured)", cssKey: "door" });
+    const isBest = doorMeasurement && doorMeasurement.status === "MEASURED" && doorMeasurement.best_photo === path;
+
+    if (isBest && doorMeasurement.best_photo_door_box && doorMeasurement.best_photo_paper_box) {
+      boxSpecs.push({ box: doorMeasurement.best_photo_door_box, label: "door — measured", cssKey: "door" });
       boxSpecs.push({ box: doorMeasurement.best_photo_paper_box, label: "calibration paper", cssKey: "paper" });
     }
 
@@ -228,11 +270,18 @@ function renderGallery(photoPaths, images, survey, doorMeasurement) {
     window.addEventListener("resize", positionOverlays);
 
     const caption = document.createElement("div");
-    caption.className = "photo-caption";
-    caption.textContent =
-      doorMeasurement && doorMeasurement.best_photo === path
-        ? `Photo ${idx + 1} — used for measurement (best angle)`
-        : `Photo ${idx + 1}`;
+    caption.className = "mt-2 font-mono text-[11px] leading-relaxed text-zinc-600";
+
+    let captionHtml = `Photo ${idx + 1}`;
+    const dev = deviationByPath[path];
+    if (dev) {
+      const devText = dev.deviation === null ? "no calibration paper detected" : `angle deviation ${dev.deviation}`;
+      const devColor = isBest ? "text-status-good" : dev.valid ? "text-zinc-500" : "text-zinc-700";
+      captionHtml += `<br><span class="${devColor}">${devText}${isBest ? " — closest, used for measurement" : ""}</span>`;
+    } else if (isBest) {
+      captionHtml += `<br><span class="text-status-good">used for measurement</span>`;
+    }
+    caption.innerHTML = captionHtml;
     frame.appendChild(caption);
 
     photoGallery.appendChild(frame);
@@ -242,13 +291,10 @@ function renderGallery(photoPaths, images, survey, doorMeasurement) {
 function makeBoxEl(label, cssKey) {
   const el = document.createElement("div");
   el.className = `box-overlay box-${cssKey}`;
-  // left/top/width/height are set in px by positionOverlays() once the
-  // image's real rendered size is known — CSS percentages on an
-  // absolutely-positioned element don't reliably resolve against an
-  // auto-height container, so we compute pixels ourselves instead.
+  el.setAttribute("aria-hidden", "true");
 
   const labelEl = document.createElement("span");
-  labelEl.className = `box-label box-${cssKey}-label`;
+  labelEl.className = "box-label";
   labelEl.textContent = label;
   el.appendChild(labelEl);
 
@@ -257,21 +303,28 @@ function makeBoxEl(label, cssKey) {
 
 function renderFlags(flags) {
   flagsList.innerHTML = "";
-  (flags || []).forEach((flag, idx) => {
-    const pillClass = flag.concern_level === "HIGH" ? "BLOCKING" : flag.concern_level === "LOW" ? "BORDERLINE" : "PASS";
-    const card = document.createElement("div");
-    card.className = `flag-card concern-${flag.concern_level}`;
-    card.style.animationDelay = `${idx * 70}ms`;
-    card.innerHTML = `
-      <div class="flag-feature">${escapeHtml(flag.feature)} <span class="pill pill-${pillClass}">${flag.concern_level}</span></div>
-      <div class="flag-observation">${escapeHtml(flag.observation)}</div>
+  (flags || []).forEach((flag) => {
+    const details = document.createElement("details");
+    details.className = "group py-4";
+    details.innerHTML = `
+      <summary class="flex cursor-pointer list-none items-center justify-between gap-6 [&::-webkit-details-marker]:hidden">
+        <span class="text-sm font-medium text-zinc-100">${escapeHtml(flag.feature)}</span>
+        <span class="flex shrink-0 items-center gap-3">
+          <span class="whitespace-nowrap font-mono text-[10px] uppercase tracking-[0.15em] ${CONCERN_COLOR[flag.concern_level] || "text-zinc-500"}">${flag.concern_level}</span>
+          <span class="font-mono text-sm text-zinc-600 transition-transform duration-150 group-open:rotate-45">+</span>
+        </span>
+      </summary>
+      <div class="mt-2 max-w-xl text-sm leading-relaxed text-zinc-500">${escapeHtml(flag.observation)}</div>
     `;
-    flagsList.appendChild(card);
+    flagsList.appendChild(details);
   });
 }
 
 function renderRemediation(text) {
-  remediationCard.innerHTML = `<h3>Remediation</h3><p>${escapeHtml(text)}</p>`;
+  remediationBlock.innerHTML = `
+    <div class="font-mono text-xs uppercase tracking-[0.15em] text-zinc-500">Remediation</div>
+    <p class="mt-2 max-w-xl text-sm leading-relaxed text-zinc-300">${escapeHtml(text)}</p>
+  `;
 }
 
 function escapeHtml(str) {
